@@ -1,0 +1,1131 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="material-icons.css" rel="stylesheet">
+<script src="https://distill.pub/template.v1.js"></script>
+<script type="text/front-matter">
+  title: t-SNEを効果的に使用する方法
+  description: 高次元データの可視化には非常に有用ですが、t-SNEプロットは時として謎めいていたり誤解を招いたりすることがあります。
+  authors:
+    - Martin Wattenberg: http://hint.fm/
+    - "Fernanda Viégas": http://hint.fm/
+    - Ian Johnson: http://enjalot.github.io/
+  affiliations:
+    - Google Brain: http://g.co/brain
+    - Google Brain: http://g.co/brain
+    - Google Cloud: http://cloud.google.com
+</script>
+
+<script src="assets/d3.min.js"></script>
+<script src="assets/tsne.js"></script>
+<script src="assets/demo-configs.js"></script>
+<script src="assets/figure-configs.js"></script>
+<script src="assets/visualize.js"></script>
+<script src="assets/figures.js"></script>
+
+<style>
+dt-banner { display: none !important; }
+
+/* Resets */
+
+input[type=range] {
+  -webkit-appearance: none; /* Hides the slider so that custom slider can be made */
+  width: 100%; /* Specific width is required for Firefox. */
+  background: transparent; /* Otherwise white in Chrome */
+}
+
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+}
+
+input[type=range]:focus {
+  outline: none; /* Removes the blue border. You should probably do some kind of focus styling for accessibility reasons though. */
+}
+
+input[type=range]::-ms-track {
+  width: 100%;
+  cursor: pointer;
+
+  /* Hides the slider so custom styles can be added */
+  background: transparent;
+  border-color: transparent;
+  color: transparent;
+}
+
+/* Thumb */
+
+/* Special styling for WebKit/Blink */
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 14px;
+  width: 14px;
+  border-radius: 50%;
+  background: steelblue;
+  cursor: pointer;
+  margin-top: -6px; /* You need to specify a margin in Chrome, but in Firefox and IE it is automatic */
+}
+
+/* All the same stuff for Firefox */
+input[type=range]::-moz-range-thumb {
+  height: 14px;
+  width: 14px;
+  border-radius: 50%;
+  background: steelblue;
+  cursor: pointer;
+  border: none;
+}
+
+/* All the same stuff for IE */
+input[type=range]::-ms-thumb {
+  height: 14px;
+  width: 14px;
+  border-radius: 50%;
+  background: grey;
+  cursor: pointer;
+}
+
+/* Track */
+
+input[type=range]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 3px;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 2px;
+  border: none;
+}
+
+input[type=range]:focus::-webkit-slider-runnable-track {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+input[type=range]::-moz-range-track {
+  width: 100%;
+  height: 3px;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 2px;
+  border: none;
+}
+
+input[type=range]::-ms-track {
+  width: 100%;
+  height: 3px;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 2px;
+  border: none;
+}
+input[type=range]::-ms-fill-lower {
+  background: rgba(0, 0, 0, 0.1);
+}
+input[type=range]:focus::-ms-fill-lower {
+  background: rgba(0, 0, 0, 0.1);
+}
+input[type=range]::-ms-fill-upper {
+  background: rgba(0, 0, 0, 0.1);
+}
+input[type=range]:focus::-ms-fill-upper {
+  background: rgba(0, 0, 0, 0.1);
+}
+</style>
+
+</head><body><dt-include src="assets/tray.html"><!--
+  Copyright 2018 Google LLC
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+
+<style>
+  #tray-container {
+    width: 100%;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 100;
+    top: -410px;
+    transition: top 0.3s;
+  }
+  #tray {
+    position: relative;
+    border: 2px solid steelblue;
+    background: white;
+    padding: 24px 24px 60px 24px;
+    box-shadow: 0px 2px 24px rgba(0, 0, 0, 0.2);
+    box-sizing: border-box;
+    margin: 0 auto;
+    height: 380px;
+    display: flex;
+    justify-content: center;
+    max-width: 700px;
+    border-radius: 4px;
+  }
+
+  #tray-container.modal {
+    top: -4px;
+  }
+
+  #tray-content {
+    width: 55%;
+    height: 100%;
+    font-size: 12px;
+    position: relative;
+    top: -12px;
+  }
+  #tray-content canvas {
+    width: 100%;
+  }
+
+  #tray-options {
+    padding-left: 36px;
+    font-size: 13px;
+    line-height: 1.5em;
+    height: 100%;
+    width: 45%;
+  }
+  #tray-options #tray-controls {
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+  }
+  #tray-controls button {
+    cursor: pointer;
+    outline: none;
+    border-radius: 50%;
+    background: steelblue;
+    color: white;
+    width: 48px;
+    height: 48px;
+    border: none;
+    margin-right: 12px;
+  }
+  #tray-controls .play-pause i {
+    display: none;
+    font-size: 30px;
+  }
+  #tray-controls .play-pause.paused i:nth-child(1) {
+    display: block;
+  }
+  #tray-controls .play-pause.playing i:nth-child(2) {
+    display: block;
+  }
+  #tray-steps-display {
+    text-align: center;
+    width: 48px;
+    font-size: 15px;
+  }
+  #tray input {
+    margin-bottom: 12px;
+    margin-left: -2px;
+  }
+  #tray-data-sliders {
+  }
+  #tray-tsne-sliders {
+  }
+  #tray-close {
+    cursor: pointer;
+    outline: none;
+    background: white;
+    border: none;
+    text-align: center;
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    padding: 6px 0;
+    background: #f0f4f5;
+    opacity: 0.6;
+    color: steelblue;
+    left: 0;
+  }
+  #tray-close:hover {
+    opacity: 1;
+  }
+</style>
+<div id="tray-container">
+  <div id="tray">
+    <div id="tray-content">
+      <canvas width="400" height="400"></canvas>
+    </div>
+
+    <div id="tray-options">
+      <div id="tray-controls">
+        <button class="play-pause">
+          <i class="material-icons">play_arrow</i>
+          <i class="material-icons">pause</i>
+        </button>
+        <button class="restart">
+          <i class="material-icons">refresh</i>
+        </button>
+        <div id="tray-steps-display">
+          Step: <br> <span class="step"></span>
+        </div>
+      </div>
+      <div id="tray-data-sliders"></div>
+      <div id="tray-tsne-sliders"></div>
+    </div>
+    <button id="tray-close"><i class="material-icons">expand_less</i></button>
+  </div>
+</div>
+<script>
+// This depends on playground.js having setup the GLOBAL object
+  function runTrayState() {
+    // Set up t-SNE and start it running.
+    var state = GLOBALS.trayState;
+    var points = state.demo.generator.apply(null, state.demoParams);
+    var canvas = d3.select("#tray-content canvas").node()
+
+    // if there was already a playground demo going, lets destroy it and make a new one
+    if(GLOBALS.trayDemo) {
+      GLOBALS.trayDemo.destroy();
+      delete GLOBALS.trayDemo;
+    }
+    GLOBALS.trayDemo = demoMaker(points, canvas, state, function(step) {
+      d3.select("#tray-controls .step").text(step);
+      if(step >= state.stepLimit && !GLOBALS.trayUnpausedBefore) {
+        setTrayRunning(false)
+      }
+    })
+
+    GLOBALS.trayUnpausedBefore = false;
+    setTrayRunning(true);
+  }
+
+  function updateTraySliders() {
+    // we regenerate all the sliders from scratch
+    // we modify the global tray state when a slider is modified
+    var state = GLOBALS.trayState;
+    var dataSliders = d3.select('#tray-data-sliders');
+    dataSliders.html('');
+    state.demo.options.map(function(option, i) {
+      var value = state.demoParams[i];
+      var slider = makeTraySlider(dataSliders.node(), option.name,
+        option.min, option.max, value, function() {
+          // when this one updates we change the appropriate state
+          GLOBALS.trayState.demoParams[i] = +slider.value
+          runTrayState();
+        });
+    });
+
+    var tsneSliders = d3.select('#tray-tsne-sliders');
+    tsneSliders.html('');
+    var perpSlider = makeTraySlider(tsneSliders.node(), "Perplexity",
+        1, 100, state.perplexity, function() {
+          GLOBALS.trayState.perplexity = perpSlider.value
+          runTrayState();
+        });
+
+    var epsSlider = makeTraySlider(tsneSliders.node(), "Epsilon",
+        1, 20, state.epsilon, function() {
+          GLOBALS.trayState.epsilon = epsSlider.value
+          runTrayState();
+        });
+
+  }
+
+  function makeTraySlider(container, name, min, max, start, changeCallback) {
+    var dis = d3.select(container)
+    dis.append("span").classed("slider-label-" + name, true)
+      .text(name + ' ')
+    var value = dis.append("span").classed("slider-value-" + name, true)
+      .text(start)
+
+    var slider = dis.append("input")
+      .attr("type", "range")
+      .attr("min", min)
+      .attr("max", max)
+      .attr("value", start)
+      .on("change", changeCallback)
+      .on("input", function() {
+        value.text(slider.node().value);
+      })
+    return slider.node();
+  }
+
+  /* Activate the tray */
+  function updateStateFromFigure(figure, example, el) {
+    var y = el.getBoundingClientRect().top;
+    var demo = demosByName[figure.dataset];
+    var state = {
+      demo: demos[demo.index],
+      demoParams: figure.params.map(function(d) { return d}),
+      perplexity: example.perplexity,
+      epsilon: example.epsilon,
+      stepLimit: example.step
+    }
+    GLOBALS.trayState = state;
+    runTrayState()
+    updateTraySliders()
+    d3.select("#tray-container").classed("modal", true)
+    GLOBALS.trayOpen = true;
+  }
+
+  d3.select("body").on("keydown", function() {
+    if(d3.event.keyCode === 27) {
+      setTrayRunning(false)
+      d3.select("#tray-container").classed("modal", false);
+      d3.selectAll(".runner").classed("selected", false);
+    }
+  })
+  d3.select("#tray-close").on("click", function() {
+    setTrayRunning(false);
+    GLOBALS.trayOpen = false;
+    d3.select("#tray-container").classed("modal", false)
+    d3.selectAll(".runner").classed("selected", false);
+  })
+
+  /* Tray Controls */
+  var trayPlay = d3.select("#tray-controls .play-pause")
+  function setTrayRunning(r) {
+    GLOBALS.running = r;
+    if (GLOBALS.running) {
+      GLOBALS.trayDemo.unpause();
+      trayPlay
+        .classed("playing", true)
+        .classed("paused", false);
+    } else {
+      GLOBALS.trayDemo.pause();
+      trayPlay
+        .classed("playing", false)
+        .classed("paused", true);
+    }
+  }
+
+  // Hook up play / pause / restart buttons.
+  trayPlay.on("click", function() {
+    GLOBALS.trayUnpausedBefore = true;
+    setTrayRunning(!GLOBALS.running);
+  });
+
+  var trayRestart = d3.select("#tray-controls .restart")
+    .on("click", function() {
+      runTrayState();
+    })
+
+  d3.select(window).on("scroll.tray", function() {
+    if(GLOBALS.trayOpen) {
+      if(scrollY < 1000) {
+        setTrayRunning(false);
+        GLOBALS.trayOpen = false;
+        d3.select("#tray-container").classed("modal", false);
+        d3.selectAll(".runner").classed("selected", false);
+      }
+    }
+  });
+  /* Tray sliders */
+</script>
+</dt-include>
+
+<dt-article>
+  <h1 class="l-middle">t-SNEを効果的に使用する方法</h1>
+  <h2 class="l-middle">高次元データの可視化には非常に有用ですが、t-SNEプロットは時として謎めいていたり誤解を招いたりすることがあります。単純なケースでの動作を探ることで、より効果的に使用する方法を学ぶことができます。</h2>
+  <div class="l-page">
+    <dt-include src="assets/playground.html"><!--
+  Copyright 2018 Google LLC
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+
+<style>
+  #playground {
+    overflow: hidden;
+    font-family: 'Open Sans', sans-serif;
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+    /*border-bottom: 1px solid rgba(0, 0, 0, 0.1);*/
+    margin-top: 36px;
+    padding: 36px 0 0 0;
+    /*background: #fcfcfc;*/
+    z-index: 1000;
+  }
+
+  #playground * {
+    box-sizing: border-box;
+  }
+
+  #playground.modal {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    top: 50px;
+  }
+
+  /* Playground Canvas */
+  #playground-canvas {
+    float: left;
+    width: 55%;
+  }
+
+  #playground-canvas canvas {
+    width: 100%;
+  }
+
+  /* Data Menu */
+  #data-menu {
+    /*float: left;*/
+    /*width: 25%*/
+    width: 40%;
+    float: left;
+    margin-bottom: 24px;
+    overflow: hidden;
+    margin-left: 5%;
+  }
+  #data-menu .demo-data {
+    cursor: pointer;
+    position: relative;
+    font-size: 10px;
+    line-height: 1.2em;
+    box-sizing: border-box;
+    float: left;
+    margin: 2px;
+    padding: 4px;
+    width: calc(33% - 4px);
+    background: white;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+    box-shadow: 0 0 3px rgba(0, 0, 0, 0.08);
+  }
+  @media(min-width: 480px) {
+    #data-menu .demo-data {
+      width: calc(25% - 8px);
+      padding: 8px;
+      margin: 4px;
+    }
+  }
+  @media(min-width: 768px) {
+    #data-menu .demo-data {
+      width: calc(16.5% - 8px);
+      padding: 8px;
+      margin: 4px;
+    }
+  }
+  #data-menu .demo-data:hover {
+  border: 1px solid rgba(0, 0, 0, 0.2);
+
+  }
+  #data-menu .demo-data.selected::after {
+    content: "";
+    border: 2px solid rgba(70, 130, 180, 0.8);
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    box-sizing: border-box;
+    border-radius: 4px;
+  }
+  #data-menu .demo-data span {
+    display: none;
+  }
+  #data-menu .demo-data:hover canvas {
+    opacity: 1;
+  }
+  #data-menu .demo-data canvas {
+    width: 100%;
+    opacity: 0.3;
+  }
+  #data-menu .demo-data.selected canvas {
+    opacity: 1;
+  }
+
+  /* Data Details */
+  #data-details {
+    position: relative;
+  }
+
+  @media(min-width: 768px) {
+    #data-details {
+      width: 40%;
+      float: right;
+    }
+  }
+
+  #data-details #data-controls {
+    width: 40%;
+    float: right;
+    position: relative;
+    overflow: hidden;
+    font-size: 13px;
+  }
+
+  @media(min-width: 768px) {
+    #data-details #data-controls {
+      width: 50%;
+      margin-right: 10%;
+      float: left;
+    }
+  }
+
+  #data-details #play-controls {
+    margin-bottom: 18px;
+    overflow: hidden;
+    position: relative;
+  }
+  #data-details #play-controls button {
+    cursor: pointer;
+    outline: none;
+    border-radius: 50%;
+    background: steelblue;
+    color: white;
+    width: 25%;
+    margin-right: 5%;
+    padding-top: 25%;
+    padding-bottom: 0;
+    border: none;
+    float: left;
+    position: relative;
+  }
+  #play-controls i {
+    display: block;
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 100%;
+    height: 36px;
+    font-size: 24px;
+    line-height: 0;
+  }
+  @media(min-width: 768px) {
+    #play-controls i {
+      font-size: 30px;
+    }
+  }
+  #play-controls #play-pause i {
+    display: none;
+    position: absolute;
+  }
+  #play-controls #play-pause.paused i:nth-child(1) {
+    display: block;
+  }
+  #play-controls #play-pause.playing i:nth-child(2) {
+    display: block;
+  }
+
+  #steps-display {
+    float: left;
+    text-align: center;
+    width: 25%;
+    line-height: 1.5em;
+    font-size: 13px;
+  }
+
+  @media(min-width: 1024px) {
+    #steps-display {
+      font-size: 16px;
+      line-height: 1.6em;
+    }
+  }
+  #data-details #data-description {
+    width: 50%;
+    margin-right: 10%;
+    float: right;
+    font-size: 14px;
+    line-height: 1.6em;
+  }
+
+  @media(min-width: 768px) {
+    #data-details #data-description {
+      width: 40%;
+      float: left;
+      margin-right: 0;
+    }
+  }
+
+  /* Options */
+  #data-details #options {
+    float: left;
+    padding-left: 36px;
+    font-size: 13px;
+    line-height: 1.5em;
+    width: 45%;
+  }
+  #data-details input {
+    display: block;
+    width: 100%;
+    margin: 8px 0 16px 0;
+  }
+
+  #options #data-options {
+    width: 45%;
+    margin-left: 4px;
+  }
+  #options #tsne-options {
+    width: 45%;
+    margin-left: 4px;
+  }
+
+  #data-details #share {
+    margin-top: 8px;
+    display: block;
+    color: rgba(0, 0, 0, 0.4);
+    text-decoration: none;
+    font-size: 12px;
+  }
+
+  #data-details #share:hover {
+    text-decoration: underline;
+  }
+
+  #data-details #share i {
+    line-height: 0px;
+    position: relative;
+    top: 7px;
+  }
+
+</style>
+<div id="playground">
+
+  <div id="playground-canvas">
+    <canvas id="output" width="600" height="600"></canvas>
+  </div>
+
+  <div id="data-menu"></div>
+
+  <div id="data-details">
+    <div id="data-controls">
+      <div id="play-controls">
+        <button id="play-pause"><i class="material-icons">play_arrow</i><i class="material-icons">pause</i></button>
+        <button id="restart"><i class="material-icons">refresh</i></button>
+        <div id="steps-display">
+          Step<br><span id="step"></span>
+        </div>
+      </div>
+      <div id="data-options"></div>
+      <div id="tsne-options"></div>
+    </div>
+    <div id="data-description">
+      <span></span>
+      <a id="share" style="display:none;"><i class="material-icons">link</i> この表示を共有</a>
+    </div>
+  </div>
+
+
+</div>
+<script src="assets/playground.js"></script>
+</dt-include>
+  </div>
+  <dt-byline></dt-byline>
+  <p>高次元データを探索するための人気の手法の一つに、<dt-cite key="maaten2008visualizing">2008年にvan der MaatenとHintonによって導入された</dt-cite>t-SNEと呼ばれるものがあります。この技術は、数百または数千の次元を持つデータから魅力的な二次元の「マップ」を作成するほぼ魔法のような能力を持っているため、機械学習の分野で広く普及しています。
+印象的ではありますが、これらの画像は誤読を招きやすい場合があります。この記事の目的は、よくある誤読を防ぐことです。</p>
+
+  <p>t-SNE図が何を示すことができ、何を示すことができないかを説明するために、一連の簡単な例を見ていきます。t-SNE技術は本当に有用ですが、それは正しく解釈する方法を知っている場合に限ります。</p>
+
+  <p>本題に入る前に：t-SNEに初めて触れる場合は、その背後にある数学について知っておくべきことをお話しします。目標は、高次元空間内の点の集合を取り、通常は2次元平面である低次元空間でそれらの点の忠実な表現を見つけることです。このアルゴリズムは非線形で、基礎となるデータに適応し、異なる領域で異なる変換を実行します。これらの違いが混乱の主な原因となる可能性があります。</p>
+
+  <p>t-SNEの2つ目の特徴は、「パープレキシティ」と呼ばれる調整可能なパラメータで、これは（大まかに言えば）データの局所的側面と大域的側面のどちらに注意を向けるかのバランスを決めるものです。このパラメータは、ある意味では、各点が持つ近接近傍点の数についての推測です。パープレキシティ値は、結果として得られる図に複雑な影響を与えます。元の論文では、<em>「SNEの性能はパープレキシティの変化に対してかなり頑健であり、典型的な値は5から50の間である」</em>と述べています。しかし、実際はもっと微妙な話です。t-SNEを最大限に活用するには、異なるパープレキシティで複数のプロットを分析することが必要かもしれません。</p>
+
+  <p>複雑さはこれで終わりではありません。例えば、t-SNEアルゴリズムは連続する実行で常に類似した出力を生成するわけではありませんし、最適化プロセスに関連する追加のハイパーパラメータもあります。</p>
+
+  <hr>
+
+  <h2>1. ハイパーパラメータは本当に重要</h2>
+
+  <p>t-SNEの「hello world」から始めましょう：大きく離れた2つのクラスターからなるデータセットです。できるだけシンプルにするために、左図に示すように2次元平面内のクラスターを考えます。（分かりやすくするため、2つのクラスターは色分けされています。）右側の図は、5つの異なるパープレキシティ値でのt-SNEプロットを示しています。</p>
+
+  <div class="l-page-outset tsne-group" id="figures-01" data-id="01">
+  </div>
+
+  <p>van der Maaten &amp; Hintonが提案した範囲（5 - 50）のパープレキシティ値では、図はこれらのクラスターを示していますが、形状は大きく異なります。その範囲外では、少し奇妙なことが起こります。パープレキシティが2の場合、局所的な変動が支配的になります。クラスターが融合したパープレキシティ100の画像は、落とし穴を示しています：アルゴリズムが適切に動作するためには、パープレキシティは点の数よりも小さくあるべきです。そうでなければ、実装は予期しない動作を示すことがあります。</p>
+
+  <p>上記の各プロットは、学習率（しばしば「イプシロン」と呼ばれる）10で5,000回の反復で作成され、ステップ5,000までに安定点に達していました。これらの値はどの程度の違いを生むのでしょうか？私たちの経験では、最も重要なことは、安定した配置に到達するまで反復することです。</p>
+
+  <div class="l-page-outset tsne-group" id="figures-02" data-id="02">
+  </div>
+
+  <p>上記の画像は、パープレキシティ30での5つの異なる実行を示しています。最初の4つは安定する前に停止されました。10、20、60、120ステップ後には、クラスターの1次元的、さらには点状の画像のように見えるレイアウトを確認できます。奇妙な「つまんだ」形状のt-SNEプロットを見た場合、プロセスが早すぎる段階で停止された可能性があります。残念ながら、安定した結果をもたらす固定されたステップ数はありません。異なるデータセットは、収束するために異なる反復数を必要とする場合があります。</p>
+
+  <p>もう一つの自然な疑問は、同じハイパーパラメータでの異なる実行が同じ結果を生成するかどうかです。この単純な2クラスターの例、およびこれから議論する他のほとんどの例では、複数の実行は同じ大域的形状を与えます。しかし、特定のデータセットでは、異なる実行で著しく異なる図が得られます。これについては後でその例の一つを示します。</p>
+
+  <p>今後、特に断りのない限り、5,000回の反復からの結果を示します。これは、このエッセイの（比較的小さな）例における収束には一般的に十分です。ただし、パープレキシティの範囲は引き続き示します。なぜなら、これがすべてのケースで大きな違いを生むように思われるからです。</p>
+
+  <hr>
+
+  <h2>2. t-SNEプロットにおけるクラスターサイズは意味がない</h2>
+
+  <p>ここまでは順調です。しかし、2つのクラスターが異なる標準偏差を持ち、そのため異なるサイズを持つ場合はどうでしょうか？（サイズとは、点の数ではなく、境界ボックスの測定値を意味します。）以下は、平面上のガウス分布の混合のt-SNEプロットで、一方が他方の10倍分散している場合です。</p>
+
+  <div class="l-page-outset tsne-group" id="figures-03" data-id="03">
+  </div>
+
+  <p>驚くことに、2つのクラスターはt-SNEプロットでは同じくらいのサイズに見えます。
+  何が起こっているのでしょうか？t-SNEアルゴリズムは、データセット内の地域的密度変動に合わせて「距離」の概念を適応させます。その結果、密なクラスターを自然に拡張し、疎なクラスターを収縮させ、クラスターサイズを均等化します。明確にしておくと、これは次元削減技術が距離を歪めるという一般的な事実とは異なる効果です。（結局のところ、この例ではすべてのデータは最初から2次元でした。）むしろ、密度の均等化は設計によって起こり、t-SNEの予測可能な特徴なのです。</p>
+
+  <p>しかし、結論として、t-SNEプロットではクラスターの相対的なサイズを見ることはできません。</p>
+
+  <hr>
+
+  <h2>3. クラスター間の距離は意味がないかもしれない</h2>
+
+  <p>クラスター<em>間</em>の距離についてはどうでしょうか？次の図は、それぞれ50点からなる3つのガウス分布を示しており、一方のペアがもう一方のペアの5倍離れています。</p>
+
+  <div class="l-page-outset tsne-group" id="figures-04" data-id="04">
+  </div>
+
+  <p>パープレキシティ50では、図は大域的幾何学の良い感覚を与えます。より低いパープレキシティ値では、クラスターは等距離に見えます。パープレキシティが100の場合、大域的幾何学は良く見えますが、クラスターの1つが他のものよりもはるかに小さく、誤って表示されます。
+  この例ではパープレキシティ50が良い結果を与えたので、大域的幾何学を見たい場合は常にパープレキシティを50に設定できるでしょうか？</p>
+
+  <p>残念ながら、そうではありません。各クラスターにより多くの点を追加すると、それを補償するためにパープレキシティを増加させる必要があります。ここでは、50点ではなく200点ずつの3つのガウシアンクラスターのt-SNE図を示します。今度は、試行したパープレキシティ値のいずれも良い結果を与えません。</p>
+
+  <div class="l-page-outset tsne-group" id="figures-05" data-id="05">
+  </div>
+
+  <p>大域的幾何学を見るためにパープレキシティの微調整が必要であることは悪いニュースです。実世界のデータでは、おそらく異なる数の要素を持つ複数のクラスターがあるでしょう。すべてのクラスター間の距離を捉える単一のパープレキシティ値は存在しないかもしれません—そして残念ながらパープレキシティは大域的パラメータです。この問題を修正することは、将来の研究の興味深い分野かもしれません。</p>
+
+  <p>基本的なメッセージは、t-SNEプロットにおいて十分に分離されたクラスター間の距離は何も意味しない可能性があるということです。</p>
+
+  <hr>
+
+  <h2>4. ランダムノイズは必ずしもランダムに見えない</h2>
+
+  <p>典型的な落とし穴は、実際にはただのランダムデータである中にパターンを見ていると思い込むことです。ノイズを見たときにそれを認識することは重要なスキルですが、適切な直感を身につけるには時間がかかります。t-SNEについて厄介なことは、それが既存の直感の多くを無意味にしてしまうことです。
+  次の図は真にランダムなデータ、100次元の単位ガウス分布から抽出された500点を示しています。左の画像は最初の2つの座標への投影です。</p>
+
+  <div class="l-page-outset tsne-group" id="figures-06" data-id="06">
+  </div>
+
+  <p>パープレキシティ2のプロットは劇的なクラスターを示しているように見えます。データ内の構造を引き出すためにパープレキシティを調整していた場合、大当たりを引いたと思うかもしれません。</p>
+
+  <p>もちろん、点の雲がランダムに生成されたことを知っているので、統計的に興味深いクラスターは存在しません：これらの「塊」は意味がないのです。以前の例を振り返ると、低いパープレキシティ値はしばしばこの種の分布につながります。これらの塊をランダムノイズとして認識することは、t-SNEプロットを読む上で重要な部分です。</p>
+
+  <p>しかし、他にも興味深いことがあり、これはt-SNEの勝利かもしれません。最初、パープレキシティ30のプロットは全くガウス分布のようには見えません：雲の異なる領域間でわずかな密度差しかなく、点は疑わしいほど均等に分布しているように見えます。実際、これらの特徴は高次元正規分布について有用なことを語っており、高次元正規分布は球面上の均等分布に非常に近く、均等に分布し、点間の間隔がほぼ等しいのです。この観点から見ると、t-SNEプロットはどの線形投影よりも正確です。</p>
+
+  <hr>
+
+  <h2>5. 時には形状を見ることができる</h2>
+
+  <p>データが完全に対称的な方法で分布することはまれです。50次元の軸に沿ったガウス分布を見てみましょう。ここで、座標iでの標準偏差は1/iです。つまり、やや長い楕円体状の点の雲を見ているのです。</p>
+
+  <div class="l-page-outset tsne-group" id="figures-07" data-id="07">
+  </div>
+
+  <p>十分に高いパープレキシティ値では、細長い形状は読み取りやすくなります。一方、低いパープレキシティでは、局所的効果と意味のない「クラスタリング」が中心となります。より極端な形状も現れますが、これも適切なパープレキシティでのみです。例えば、ここでは2次元の平行線上に少しノイズを加えて配置された、それぞれ75点からなる2つのクラスターを示します。</p>
+
+  <div class="l-page-outset tsne-group" id="figures-08" data-id="08">
+  </div>
+
+  <p>特定のパープレキシティの範囲では、長いクラスターは正しく見えるに近く、これは安心できます。</p>
+
+  <p>しかし、最良の場合でも微妙な歪みがあります：t-SNE図では線がわずかに外側に湾曲しています。その理由は、いつものように、t-SNEがデータのより密な領域を拡張する傾向があるからです。クラスターの中央部は端部よりも周囲の空の空間が少ないため、アルゴリズムはそれらを拡大します。</p>
+
+  <hr>
+
+  <h2>6. 位相幾何学には複数のプロットが必要な場合がある</h2>
+
+  <p>時にはt-SNEプロットから位相情報を読み取ることができますが、それには通常、複数のパープレキシティでの表示が必要です。
+  最も単純な位相的性質の一つは包含です。以下のプロットは、50次元空間における75点ずつの2つのグループを示しています。どちらも原点を中心とした対称ガウス分布からサンプリングされていますが、一方は他方よりも50倍密に分散しています。「小さな」分布は事実上、大きな分布に含まれています。</p>
+
+  <div class="l-page-outset tsne-group" id="figures-09" data-id="09">
+  </div>
+
+  <p>パープレキシティ30の表示は基本的な位相を正しく示していますが、再びt-SNEは小さな点グループのサイズを大幅に誇張しています。パープレキシティ50では、新しい現象が起こります：外側のグループが円になります。これは、すべての点が内側のグループからほぼ同じ距離にあるという事実を描こうとしているためです。この画像だけを見ると、これらの外側の点を一次元構造として誤読しやすいでしょう。</p>
+
+  <p>より複雑な位相のタイプについてはどうでしょうか？これは実用的データアナリストよりも数学者により愛される主題かもしれませんが、興味深い低次元構造が時折野生で発見されます。</p>
+
+  <p>3次元でリンクや結び目を描く点の集合を考えてみましょう。再び、複数のパープレキシティ値を見ることで最も完全な図を得られます。低いパープレキシティ値では2つの完全に分離したループが得られ、高いものでは一種の大域的接続性を示します。</p>
+
+  <div class="l-page-outset tsne-group" id="figures-10" data-id="10">
+  </div>
+  <div class="l-page-outset tsne-group" id="figures-11" data-id="11">
+  </div>
+
+  <p>三葉結び目は、複数の実行がt-SNEの結果にどのように影響するかの興味深い例です。以下は、パープレキシティ2での5回の実行です。</p>
+
+  <p>アルゴリズムは2回円に落ち着き、これは少なくとも内在的位相を保持しています。しかし、3回の実行では、人工的な断絶を導入する3つの異なる解に到達しました。点の色をガイドとして使用すると、1回目と3回目の実行が互いに大きく異なることがわかります。</p>
+
+  <div class="l-page-outset tsne-group" id="figures-12" data-id="12">
+  </div>
+
+  <p>しかし、パープレキシティ50での5回の実行は、（対称性を除いて）視覚的に同一の結果を与えます。明らかに、最適化が他よりも容易な問題があります。</p>
+
+  <div class="l-page-outset tsne-group" id="figures-13" data-id="13">
+  </div>
+
+  <hr>
+
+  <h2>結論</h2>
+
+  <p>t-SNEがこれほど人気になった理由があります：それは信じられないほど柔軟で、他の次元削減アルゴリズムが見つけられない場所で構造を見つけることができるのです。残念ながら、まさにその柔軟性が解釈を困難にします。ユーザーの目に触れないところで、アルゴリズムは可視化を整理するあらゆる種類の調整を行っています。
+  しかし、隠れた「魔法」に怖がって全体の技術から遠ざからないでください。良いニュースは、単純なケースでt-SNEがどのように動作するかを研究することで、何が起こっているかについての直感を発達させることが可能だということです。</p>
+
+
+  <!-- bring the figures to life -->
+  <dt-include src="assets/tsne-group.html"><!--
+  Copyright 2018 Google LLC
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+
+<style>
+
+.tsne-group {
+  overflow: visible;
+  display: -webkit-flex;
+  display: flex;
+  flex-direction: column;
+  margin-top: 36px;
+  margin-bottom: 36px;
+}
+
+@media(min-width: 640px) {
+  .tsne-group {
+    -webkit-flex-direction: row;
+    flex-direction: row;
+  }
+}
+
+.tsne-group .original,
+.tsne-group .runner {
+  box-sizing: border-box;
+  -webkit-flex-grow: 1;
+  flex-grow: 1;
+  position: relative;
+  display: -webkit-flex;
+  display: flex;
+  margin-bottom: 12px;
+}
+
+.tsne-group .original {
+  position: relative;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  padding-bottom: 12px;
+}
+
+@media(min-width: 640px) {
+  .tsne-group .original,
+  .tsne-group .runner {
+    display: block;
+    width: 100%;
+    margin-bottom: 0;
+  }
+
+  .tsne-group .original {
+    margin-left: 0;
+    padding-right: 12px;
+    border-right: 1px solid rgba(0, 0, 0, 0.1);
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+
+  .tsne-group .runner {
+    margin-left: 12px;
+  }
+}
+
+.tsne-group .runner.no-click {
+  cursor: default;
+}
+
+.runner.clickable {
+  cursor: pointer;
+}
+
+.runner.clickable:hover .image {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.runner:hover i {
+  opacity: 1;
+}
+
+.runner.selected i {
+  opacity: 1;
+}
+
+.runner i {
+  font-size: 30px;
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  background-color: hsla(207, 44%, 79%, 0.8);
+  color: steelblue;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  line-height: 0;
+  width: 150px;
+  padding: 75px 0;
+  text-align: center;
+}
+
+@media(min-width: 640px) {
+  .runner i {
+    width: 100%;
+    padding: 50% 0;
+  }
+}
+
+.runner.selected .image::after {
+  content: "";
+  border: 2px solid rgba(70, 130, 180, 1);
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  box-sizing: border-box;
+  border-radius: 4px;
+  z-index: 10;
+}
+
+.tsne-group .image {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.08);
+  width: 150px;
+  padding-top: 150px;
+  background: white;
+  position: relative;
+  transition: border-color 0.3s, box-shadow 0.3s;
+  margin-right: 12px;
+}
+
+@media(min-width: 640px) {
+  .tsne-group .image {
+    width: 100%;
+    padding-top: 100%;
+    margin-right: 0;
+  }
+}
+
+.tsne-group .original .image {
+  box-shadow: none;
+}
+
+.tsne-group .image img {
+  position: absolute;
+  top: 5%;
+  left: 5%;
+  width: 90%;
+}
+
+.tsne-group h3.caption {
+  font-size: 15px;
+  margin-top: 12px;
+}
+
+.tsne-group .caption {
+  font-size: 12px;
+  line-height: 1.6em;
+  margin-top: 12px;
+  width: 100px;
+}
+
+@media(min-width: 640px) {
+  .tsne-group .caption,
+  .tsne-group h3.caption {
+    margin-top: 8px;
+    width: 100%;
+  }
+}
+</style>
+
+<script>
+(function() {
+  var format = d3.format(",");
+  d3.selectAll(".tsne-group").data(figures, function(d) {
+    if(!d) return this.dataset.id;
+    return d.id
+  })
+  .each(generateFigure)
+
+  function generateFigure(figure) {
+
+    var FIGURE = figure.id
+    var dis = d3.select(this)
+    var original = dis.append("div").classed("original", true)
+    original.append("div")
+        .classed("image", true)
+      .append("img")
+        .classed("tsne-plot", true)
+        .attr("src", "assets/figure_" + FIGURE + "_" + "original.png");
+    original.append("h3").classed("caption", true).text("Original")
+
+    // examples
+    var runners = dis.selectAll(".runner").data(figure.examples)
+      .enter().append("div").classed("runner", true)
+    if(!figure.noclick) {
+      runners
+        .classed("clickable", true)
+        .on("click", function(d) {
+          d3.selectAll(".runner").classed("selected", false)
+          updateStateFromFigure(figure, d, this);
+          d3.select(this).classed("selected", true)
+        });
+    } else {
+      runners.classed("no-click", true)
+    }
+
+    runners.append("div")
+        .classed("image", true)
+      .append("img")
+        .attr("src", function(d,i) {
+          return "assets/figure_" + FIGURE + "_" + d.id + ".png"
+        });
+
+    if(!figure.noclick) {
+      runners.append("i")
+        .classed("material-icons", true)
+        .text("open_in_browser")
+    }
+
+    var caption = runners.append("div").classed("caption", true);
+
+    caption.append("div").text(function(d) { return "Perplexity: " + format(d.perplexity); })
+
+    caption.append("div").text(function(d) { return "Step: " + format(d.step); })
+  }
+})()
+</script>
+</dt-include>
+
+</dt-article>
+<dt-appendix>
+
+  <h3>謝辞</h3>
+  <p>このプラットフォームを作成し、優れたデザインと編集で協力してくれたChris OlahとShan Carterに感謝します。
+     Daniel Smilkov、James Wexler、Chi Zengから多くの有益なコメントをいただきました。
+     また、インタラクティブな図で使用されている<a href="https://github.com/karpathy/tsnejs">tsnejs</a>ライブラリを作成したAndrej Karpathyにも感謝します。</p>
+  <p>この研究は、<a href="https://research.google.com/teams/brain/">Google Brain</a>チームの支援によって可能になりました。</p>
+
+  <p>2016年10月18日に編集：点の数より大きいパープレキシティが定義された場合の問題を記述し修正しました。これを指摘してくれたLaurens van der Maatenに感謝します。</p>
+
+</dt-appendix>
+
+<script type="text/bibliography">
+@article{maaten2008visualizing,
+  title={Visualizing data using t-SNE},
+  author={Maaten, Laurens van der and Hinton, Geoffrey},
+  journal={Journal of Machine Learning Research},
+  volume={9},
+  number={Nov},
+  pages={2579--2605},
+  year={2008},
+  url={http://www.jmlr.org/papers/volume9/vandermaaten08a/vandermaaten08a.pdf}
+}
+</script>
+</body></html>
