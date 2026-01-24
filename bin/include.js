@@ -16,13 +16,13 @@ var fs = require("fs"),
     path = require("path"),
     JSDOM = require("jsdom").JSDOM;
 
-let dom = new JSDOM(fs.readFileSync("public/_index.html", "utf8"), {features: {ProcessExternalResources: false, FetchExternalResources: false}});
+let dom = new JSDOM(fs.readFileSync("docs/_index.html", "utf8"), {features: {ProcessExternalResources: false, FetchExternalResources: false}});
 
 function renderIncludes(document) {
   let includes = [].slice.apply(document.querySelectorAll("dt-include"));
   includes.forEach(function(el) {
     let location = el.getAttribute("src");
-    let includeText = fs.readFileSync(path.join("public", location), "utf8");
+    let includeText = fs.readFileSync(path.join("docs", location), "utf8");
     el.innerHTML = includeText;
     renderIncludes(el);
   });
