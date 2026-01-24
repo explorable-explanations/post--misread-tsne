@@ -6,7 +6,8 @@
     "material-design-icons": "^3.0.1"
   },
   "scripts": {
-    "build": " cp -rf node_modules/material-design-icons/iconfont/ public/ && node bin/include.js > public/index.html"
+    "build": " cp -rf node_modules/material-design-icons/iconfont/ docs/ && node bin/include.js > docs/index.html",
+    "serve": "npx serve docs"
   },
   "devDependencies": {
     "jsdom": "^27.0.0"
